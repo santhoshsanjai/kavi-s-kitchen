@@ -8,6 +8,11 @@ import { DriverLayout } from './components/layout/DriverLayout'
 
 import { LoginPage } from './pages/auth/LoginPage'
 import { DashboardPage } from './pages/admin/DashboardPage'
+import { CustomersPage } from './pages/admin/CustomersPage'
+import { EnquiriesPage } from './pages/admin/EnquiriesPage'
+import { MealPlansPage } from './pages/admin/MealPlansPage'
+import { MealPlannerPage } from './pages/admin/MealPlannerPage'
+import { DeliveriesPage } from './pages/admin/DeliveriesPage'
 import { DriverTodayPage } from './pages/driver/DriverTodayPage'
 import { ModulePlaceholderPage } from './pages/admin/ModulePlaceholderPage'
 
@@ -60,46 +65,11 @@ export function App() {
         >
           <Route index element={<Navigate to="/admin/dashboard" replace />} />
           <Route path="dashboard" element={<DashboardPage />} />
-          <Route
-            path="customers"
-            element={
-              <ModulePlaceholderPage
-                title="Customer Master & Enquiries"
-                phase="Phase 3"
-                description="Manage customer profiles, dietary preferences, and Google Maps address selection."
-              />
-            }
-          />
-          <Route
-            path="enquiries"
-            element={
-              <ModulePlaceholderPage
-                title="Enquiries & Leads"
-                phase="Phase 3"
-                description="Track incoming enquiries and transition them directly into active meal subscribers."
-              />
-            }
-          />
-          <Route
-            path="meal-planner"
-            element={
-              <ModulePlaceholderPage
-                title="Daily Meal Planner Grid"
-                phase="Phase 4"
-                description="Interactive spreadsheet-like meal planning for breakfast, lunch, and dinner."
-              />
-            }
-          />
-          <Route
-            path="deliveries"
-            element={
-              <ModulePlaceholderPage
-                title="Delivery Assignment"
-                phase="Phase 4"
-                description="Assign delivery orders to active drivers and optimize daily route sequences."
-              />
-            }
-          />
+          <Route path="customers" element={<CustomersPage />} />
+          <Route path="enquiries" element={<EnquiriesPage />} />
+          <Route path="meal-plans" element={<MealPlansPage />} />
+          <Route path="meal-planner" element={<MealPlannerPage />} />
+          <Route path="deliveries" element={<DeliveriesPage />} />
           <Route
             path="live-tracking"
             element={
