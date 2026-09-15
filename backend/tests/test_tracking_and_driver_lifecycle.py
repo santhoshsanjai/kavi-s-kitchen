@@ -10,6 +10,8 @@ from app.core.security import get_password_hash
 
 @pytest.mark.asyncio
 async def test_driver_delivery_flow_and_tracking():
+    await database.connect_to_mongo()
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -37,7 +39,7 @@ async def test_driver_delivery_flow_and_tracking():
 
         # 2. Login as driver
         login_res = await ac.post("/api/v1/auth/login", json={
-            "username": "trackdriver",
+            "identifier": "trackdriver",
             "password": "driver123"
         })
         assert login_res.status_code == 200

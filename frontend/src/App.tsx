@@ -13,6 +13,8 @@ import { EnquiriesPage } from './pages/admin/EnquiriesPage'
 import { MealPlansPage } from './pages/admin/MealPlansPage'
 import { MealPlannerPage } from './pages/admin/MealPlannerPage'
 import { DeliveriesPage } from './pages/admin/DeliveriesPage'
+import { LiveTrackingPage } from './pages/admin/LiveTrackingPage'
+import { DriversPage } from './pages/admin/DriversPage'
 import { DriverTodayPage } from './pages/driver/DriverTodayPage'
 import { ModulePlaceholderPage } from './pages/admin/ModulePlaceholderPage'
 
@@ -70,26 +72,8 @@ export function App() {
           <Route path="meal-plans" element={<MealPlansPage />} />
           <Route path="meal-planner" element={<MealPlannerPage />} />
           <Route path="deliveries" element={<DeliveriesPage />} />
-          <Route
-            path="live-tracking"
-            element={
-              <ModulePlaceholderPage
-                title="Live Driver Tracking Map"
-                phase="Phase 5"
-                description="Real-time WebSocket tracking of delivery drivers across customer destination routes."
-              />
-            }
-          />
-          <Route
-            path="drivers"
-            element={
-              <ModulePlaceholderPage
-                title="Driver Fleet"
-                phase="Phase 5"
-                description="View active driver availability, vehicle assignments, and shift histories."
-              />
-            }
-          />
+          <Route path="live-tracking" element={<LiveTrackingPage />} />
+          <Route path="drivers" element={<DriversPage />} />
           <Route
             path="users"
             element={

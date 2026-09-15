@@ -103,6 +103,47 @@ export const orderApiSlice = apiSlice.injectEndpoints({
       }),
       invalidatesTags: [{ type: 'Order', id: 'LIST' }],
     }),
+    startDelivery: builder.mutation<Order, string>({
+      query: (id) => ({
+        url: `/orders/${id}/start-delivery`,
+        method: 'POST',
+      }),
+      invalidatesTags: (_result, _error, id) => [
+        { type: 'Order', id },
+        { type: 'Order', id: 'LIST' },
+        { type: 'Driver', id: 'LIST' },
+      ],
+    }),
+    completeDelivery: builder.mutation<
+      Order,
+      { id: string; recipient_name?: string; delivery_note?: string; proof_photo_url?: string }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/orders/${id}/complete-delivery`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: 'Order', id },
+        { type: 'Order', id: 'LIST' },
+        { type: 'Driver', id: 'LIST' },
+      ],
+    }),
+    failDelivery: builder.mutation<
+      Order,
+      { id: string; reason: string; notes?: string }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/orders/${id}/fail-delivery`,
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: 'Order', id },
+        { type: 'Order', id: 'LIST' },
+        { type: 'Driver', id: 'LIST' },
+      ],
+    }),
   }),
 })
 
@@ -115,4 +156,7 @@ export const {
   useBulkUpdateStatusMutation,
   useBulkAssignDriverMutation,
   useDeleteOrderMutation,
+  useStartDeliveryMutation,
+  useCompleteDeliveryMutation,
+  useFailDeliveryMutation,
 } = orderApiSlice
