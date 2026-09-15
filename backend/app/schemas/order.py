@@ -69,6 +69,17 @@ class OrderStatusUpdate(BaseModel):
     reason: Optional[str] = None
 
 
+class CompleteDeliveryRequest(BaseModel):
+    recipient_name: Optional[str] = None
+    delivery_note: Optional[str] = None
+    proof_photo_url: Optional[str] = None
+
+
+class FailDeliveryRequest(BaseModel):
+    reason: str  # CUSTOMER_UNAVAILABLE, WRONG_ADDRESS, PHONE_UNREACHABLE, CUSTOMER_CANCELLED, LOCATION_INACCESSIBLE, OTHER
+    notes: Optional[str] = None
+
+
 class BulkStatusUpdate(BaseModel):
     order_ids: List[str]
     status: OrderStatus

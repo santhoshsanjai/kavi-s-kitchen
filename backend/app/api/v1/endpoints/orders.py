@@ -7,6 +7,8 @@ from app.schemas.order import (
     OrderCreate,
     OrderUpdate,
     OrderStatusUpdate,
+    CompleteDeliveryRequest,
+    FailDeliveryRequest,
     BulkStatusUpdate,
     BulkAssignDriver,
     GenerateDailyOrdersRequest,
@@ -22,6 +24,7 @@ from app.schemas.user import UserRole
 from app.core import database
 from app.models.order import order_helper
 from app.api.deps import require_roles, get_current_active_user
+from app.services.tracking_manager import tracking_manager
 
 router = APIRouter()
 
@@ -406,3 +409,233 @@ async def delete_order(
         )
 
     return {"message": "Order removed successfully", "id": order_id}
+
+
+@router.post("/{order_id}/start-delivery", response_model=OrderResponse)
+async def start_delivery(
+    order_id: str,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """
+    Driver clicks 'START DELIVERY' for an assigned order.
+    Sets status to OUT_FOR_DELIVERY and updates driver status to ON_DELIVERY.
+    Broadcasts live event to admin dashboard.
+    """
+    if database.db is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database connection unavailable"
+        )
+
+    try:
+        query = {"_id": ObjectId(order_id)}
+    except Exception:
+        query = {"id": order_id}
+
+    order = await database.db.orders.find_one(query)
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    driver_id = str(current_user["id"])
+    now_utc = datetime.now(timezone.utc)
+
+    # Update order
+    await database.db.orders.update_one(
+        query,
+        {
+            "$set": {
+                "status": OrderStatus.OUT_FOR_DELIVERY,
+                "out_for_delivery_at": now_utc,
+                "updated_at": now_utc
+            }
+        }
+    )
+
+    # Update driver driving status
+    try:
+        driver_q = {"_id": ObjectId(driver_id)}
+    except Exception:
+        driver_q = {"id": driver_id}
+
+    await database.db.users.update_one(
+        driver_q,
+        {
+            "$set": {
+                "driving_status": "ON_DELIVERY",
+                "updated_at": now_utc
+            }
+        }
+    )
+
+    updated_order = await database.db.orders.find_one(query)
+
+    # Broadcast event to connected admin viewers
+    await tracking_manager.broadcast_to_admins({
+        "event": "ORDER_OUT_FOR_DELIVERY",
+        "data": {
+            "order_id": order_id,
+            "driver_id": driver_id,
+            "driver_name": current_user.get("full_name", current_user.get("username")),
+            "customer_name": order.get("customer_name"),
+            "delivery_address": order.get("delivery_address", {}),
+            "timestamp": now_utc.isoformat()
+        }
+    })
+
+    return order_helper(updated_order)
+
+
+@router.post("/{order_id}/complete-delivery", response_model=OrderResponse)
+async def complete_delivery(
+    order_id: str,
+    payload: CompleteDeliveryRequest,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """
+    Driver completes delivery with recipient name and optional delivery note.
+    Sets status to DELIVERED and updates driver status to AVAILABLE if no more orders in progress.
+    """
+    if database.db is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database connection unavailable"
+        )
+
+    try:
+        query = {"_id": ObjectId(order_id)}
+    except Exception:
+        query = {"id": order_id}
+
+    order = await database.db.orders.find_one(query)
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    driver_id = str(current_user["id"])
+    now_utc = datetime.now(timezone.utc)
+
+    update_fields: Dict[str, Any] = {
+        "status": OrderStatus.DELIVERED,
+        "delivered_at": now_utc,
+        "updated_at": now_utc
+    }
+    if payload.recipient_name:
+        update_fields["recipient_name"] = payload.recipient_name
+    if payload.delivery_note:
+        update_fields["delivery_notes"] = payload.delivery_note
+    if payload.proof_photo_url:
+        update_fields["proof_photo_url"] = payload.proof_photo_url
+
+    await database.db.orders.update_one(query, {"$set": update_fields})
+
+    # Check if this driver has remaining active/out-for-delivery orders today
+    today_str = now_utc.strftime("%Y-%m-%d")
+    remaining_active = await database.db.orders.count_documents({
+        "assigned_driver_id": driver_id,
+        "order_date": today_str,
+        "status": "OUT_FOR_DELIVERY"
+    })
+
+    if remaining_active == 0:
+        try:
+            driver_q = {"_id": ObjectId(driver_id)}
+        except Exception:
+            driver_q = {"id": driver_id}
+
+        await database.db.users.update_one(
+            driver_q,
+            {
+                "$set": {
+                    "driving_status": "AVAILABLE",
+                    "updated_at": now_utc
+                }
+            }
+        )
+
+    updated_order = await database.db.orders.find_one(query)
+
+    # Broadcast event to admin stream
+    await tracking_manager.broadcast_to_admins({
+        "event": "ORDER_DELIVERED",
+        "data": {
+            "order_id": order_id,
+            "driver_id": driver_id,
+            "driver_name": current_user.get("full_name", current_user.get("username")),
+            "recipient_name": payload.recipient_name,
+            "timestamp": now_utc.isoformat()
+        }
+    })
+
+    return order_helper(updated_order)
+
+
+@router.post("/{order_id}/fail-delivery", response_model=OrderResponse)
+async def fail_delivery(
+    order_id: str,
+    payload: FailDeliveryRequest,
+    current_user: dict = Depends(get_current_active_user)
+):
+    """
+    Driver marks delivery as failed with required structured reason and optional note.
+    Status becomes FAILED.
+    """
+    if database.db is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database connection unavailable"
+        )
+
+    try:
+        query = {"_id": ObjectId(order_id)}
+    except Exception:
+        query = {"id": order_id}
+
+    order = await database.db.orders.find_one(query)
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+
+    driver_id = str(current_user["id"])
+    now_utc = datetime.now(timezone.utc)
+
+    await database.db.orders.update_one(
+        query,
+        {
+            "$set": {
+                "status": OrderStatus.FAILED,
+                "status_reason": payload.reason,
+                "delivery_notes": payload.notes,
+                "failed_at": now_utc,
+                "updated_at": now_utc
+            }
+        }
+    )
+
+    # Check remaining
+    today_str = now_utc.strftime("%Y-%m-%d")
+    remaining_active = await database.db.orders.count_documents({
+        "assigned_driver_id": driver_id,
+        "order_date": today_str,
+        "status": "OUT_FOR_DELIVERY"
+    })
+    if remaining_active == 0:
+        try:
+            driver_q = {"_id": ObjectId(driver_id)}
+        except Exception:
+            driver_q = {"id": driver_id}
+        await database.db.users.update_one(driver_q, {"$set": {"driving_status": "AVAILABLE"}})
+
+    updated_order = await database.db.orders.find_one(query)
+
+    # Broadcast event to admin stream
+    await tracking_manager.broadcast_to_admins({
+        "event": "ORDER_FAILED",
+        "data": {
+            "order_id": order_id,
+            "driver_id": driver_id,
+            "reason": payload.reason,
+            "notes": payload.notes,
+            "timestamp": now_utc.isoformat()
+        }
+    })
+
+    return order_helper(updated_order)
+
