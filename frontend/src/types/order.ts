@@ -97,3 +97,42 @@ export interface OrderCreateInput {
   delivery_charge?: number
   total_price?: number
 }
+
+export interface DriverTodayDeliveriesResponse {
+  driver_id: string
+  driver_name: string
+  driving_status: string
+  date: string
+  total_assigned: number
+  pending_count: number
+  out_for_delivery_count: number
+  completed_count: number
+  failed_count: number
+  orders: Order[]
+}
+
+export interface LiveDriver {
+  driver_id: string
+  driver_name: string
+  phone?: string
+  vehicle_type?: string
+  vehicle_number?: string
+  driving_status: string
+  is_connected: boolean
+  latitude: number
+  longitude: number
+  speed?: number
+  heading?: number
+  last_updated?: string
+  active_order?: {
+    order_id: string
+    customer_name: string
+    customer_phone: string
+    area?: string
+    address_line?: string
+    latitude?: number
+    longitude?: number
+    meal_session?: MealSession
+    quantity: number
+  }
+}
