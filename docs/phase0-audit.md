@@ -113,7 +113,7 @@ States: **Implemented**, **Partially Implemented**, **Missing**, **Broken**, **N
 | Migrations | Missing | none |
 | NUMERIC/Decimal money | Missing | `float` in `schemas/meal_plan.py:11`, `schemas/order.py:45-46`, `schemas/enquiry.py:28` |
 | Admin password login + JWT access/refresh | Implemented | `endpoints/auth.py`, `core/security.py`, `tests/test_auth_endpoints.py` |
-| Role-based permissions | Partially Implemented | coarse `require_roles` (`api/deps.py:63`); `ROLE_PERMISSIONS` list returned to the UI but never enforced server-side |
+| Role-based permissions | Partially Implemented | coarse `require_roles` (`api/deps.py:64`); `ROLE_PERMISSIONS` list returned to the UI but never enforced server-side |
 | Backend authorization on every protected operation | Broken | see Section 6 |
 | Login rate limiting / OTP abuse protection | Missing | no limiter anywhere |
 | Token revocation on logout | Missing | `endpoints/auth.py` logout is a no-op |
@@ -211,7 +211,7 @@ Proposed repo layout additions: `apps/customer/` and `apps/driver/` (Expo), `pac
 | S6 | Drivers can list all drivers and all live positions with active customers | `GET /drivers` (`endpoints/drivers.py:62`), `GET /tracking/live-drivers` (`endpoints/tracking.py:116`) |
 | S7 | Default accounts with published passwords are seeded on every startup in every environment | `db/init_db.py:24-66`, `README.md` |
 | S8 | No login rate limiting | `endpoints/auth.py:27` |
-| S9 | Silent fallback to an in-memory DB in any environment would lose all writes on restart while `/health` reports "connected" | `core/database.py:31-45`, `main.py:30` |
+| S9 | Silent fallback to an in-memory DB in any environment would lose all writes on restart while `/health` reports "connected" | `core/database.py:29-45`, `main.py:31` |
 
 ## 7. Decisions needed before Phase 1
 
