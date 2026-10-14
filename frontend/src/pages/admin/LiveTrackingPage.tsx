@@ -39,7 +39,7 @@ export const LiveTrackingPage: React.FC = () => {
   useEffect(() => {
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsHost = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`
-    const wsUrl = `${wsProtocol}//${wsHost}/api/v1/tracking/ws/admin`
+    const wsUrl = `${wsProtocol}//${wsHost}/api/v1/tracking/ws/admin?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`
 
     try {
       const ws = new WebSocket(wsUrl)

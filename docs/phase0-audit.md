@@ -235,3 +235,23 @@ MONGODB_URI="mongodb://127.0.0.1:1/x" JWT_SECRET_KEY=test python -m pytest -q   
 # frontend
 cd frontend && npm ci && npx tsc -b && npm run build && npm run lint          # build OK, 6 lint warnings
 ```
+
+## 9. Phase 0.5 progress (after owner approval, 14 Oct 2026)
+
+The owner approved the recommendations (PostgreSQL, Expo for mobile, keep live tracking but secured). Done so far:
+
+| Item | Status | Evidence |
+|---|---|---|
+| PostgreSQL 16 + SQLAlchemy 2 (async) | Implemented | `backend/app/core/database.py`, `backend/app/models/*.py` |
+| Alembic migrations | Implemented | `backend/alembic/versions/0001_initial_schema.py` |
+| NUMERIC money in the database | Implemented | `price`, `quoted_price`, `delivery_charge`, `total_price` are `NUMERIC(12,2)`; API JSON still returns numbers |
+| Duplicate subscription meals prevented | Implemented | partial unique index `uq_orders_subscription_customer_date_session`; `generate-daily` uses `ON CONFLICT DO NOTHING` |
+| Customers with order history cannot be hard-deleted | Implemented | `DELETE /customers/{id}` returns 409 |
+| S1-S6 authorization defects | Fixed | `backend/tests/test_authorization.py` |
+| S7 seeding only in development | Fixed | `backend/app/db/init_db.py` |
+| S9 health check reflects real DB state | Fixed | `/health` returns 503 when PostgreSQL is unreachable |
+| IST business dates | Fixed | `backend/app/core/time.py` |
+| Local database | Implemented | `docker-compose.yml` (`docker compose up -d db`) |
+| S8 login rate limiting | Still missing | planned with OTP work |
+
+API URLs and JSON shapes are unchanged, except IDs are now UUID strings and driver-only order actions return 404/409 where they used to succeed for the wrong user or state. Backend tests: 10 passed against PostgreSQL.

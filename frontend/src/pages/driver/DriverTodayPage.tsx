@@ -67,7 +67,7 @@ export const DriverTodayPage: React.FC = () => {
       // Connect WebSocket to backend tracking endpoint
       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       const wsHost = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`
-      const wsUrl = `${wsProtocol}//${wsHost}/api/v1/tracking/ws/driver/${driverId}`
+      const wsUrl = `${wsProtocol}//${wsHost}/api/v1/tracking/ws/driver/${driverId}?token=${encodeURIComponent(localStorage.getItem('token') ?? '')}`
 
       try {
         const ws = new WebSocket(wsUrl)

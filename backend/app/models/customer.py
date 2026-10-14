@@ -1,22 +1,45 @@
-from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Any, Dict, Optional
+from sqlalchemy import Boolean, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base, Timestamps, UUIDPrimaryKey
+from app.models._types import ev, str_enum
+from app.schemas.customer import CustomerType
 
 
-def customer_helper(customer: Dict[str, Any]) -> Dict[str, Any]:
-    """Formats a MongoDB customer document into a standardized dictionary."""
+class Customer(UUIDPrimaryKey, Timestamps, Base):
+    __tablename__ = "customers"
+
+    name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    phone: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    alternate_phone: Mapped[Optional[str]] = mapped_column(String(20))
+    whatsapp_number: Mapped[Optional[str]] = mapped_column(String(20))
+    customer_type: Mapped[CustomerType] = mapped_column(
+        str_enum(CustomerType, "customer_type"), nullable=False, default=CustomerType.INDIVIDUAL
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    # Kept as documents to preserve the current API shape; CustomerAddress gets its own table in Phase 1.
+    address: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    meal_preference: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+
+
+def customer_helper(customer: Optional[Customer]) -> Dict[str, Any]:
+    """Serializes a Customer row into the API's customer dictionary."""
     if not customer:
         return {}
     return {
-        "id": str(customer["_id"]) if "_id" in customer else str(customer.get("id", "")),
-        "name": customer.get("name", ""),
-        "phone": customer.get("phone", ""),
-        "alternate_phone": customer.get("alternate_phone"),
-        "whatsapp_number": customer.get("whatsapp_number"),
-        "customer_type": customer.get("customer_type", "INDIVIDUAL"),
-        "is_active": customer.get("is_active", True),
-        "address": customer.get("address", {}),
-        "meal_preference": customer.get("meal_preference", {}),
-        "notes": customer.get("notes"),
-        "created_at": customer.get("created_at", datetime.now(timezone.utc)),
-        "updated_at": customer.get("updated_at")
+        "id": str(customer.id),
+        "name": customer.name,
+        "phone": customer.phone,
+        "alternate_phone": customer.alternate_phone,
+        "whatsapp_number": customer.whatsapp_number,
+        "customer_type": ev(customer.customer_type),
+        "is_active": customer.is_active,
+        "address": customer.address or {},
+        "meal_preference": customer.meal_preference or {},
+        "notes": customer.notes,
+        "created_at": customer.created_at,
+        "updated_at": customer.updated_at,
     }

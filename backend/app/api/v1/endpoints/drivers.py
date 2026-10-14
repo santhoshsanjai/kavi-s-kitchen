@@ -1,18 +1,24 @@
+import uuid
 from fastapi import APIRouter, HTTPException, status, Depends
-from bson import ObjectId
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime
 from pydantic import BaseModel
 
+from app.schemas.order import OrderStatus
 from app.schemas.user import UserRole
-from app.core import database
-from app.models.order import order_helper
-from app.api.deps import require_roles, get_current_active_user
+from app.core.database import get_db
+from app.core.time import business_today, utcnow
+from app.models.order import Order, order_helper
+from app.models.user import User
+from app.api.deps import ADMIN_ROLES, parse_uuid, require_roles
 from app.services.tracking_manager import tracking_manager
 
 router = APIRouter()
 
-admin_access = require_roles([UserRole.SUPER_ADMIN, UserRole.ADMIN])
+admin_access = require_roles(ADMIN_ROLES)
+driver_access = require_roles([UserRole.DRIVER])
 
 
 class DriverStatusUpdate(BaseModel):
@@ -61,76 +67,63 @@ class DriverTodayDeliveriesResponse(BaseModel):
 
 @router.get("", response_model=List[DriverDetailResponse])
 async def list_drivers(
-    current_user: dict = Depends(get_current_active_user)
+    _: dict = Depends(admin_access),
+    db: AsyncSession = Depends(get_db),
 ):
-    if database.db is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection unavailable"
+    today = business_today()
+    drivers = (await db.execute(
+        select(User).where(User.role == UserRole.DRIVER, User.is_active.is_(True)).order_by(User.full_name)
+    )).scalars().all()
+
+    async def count_today(driver_id: uuid.UUID, statuses: List[OrderStatus]) -> int:
+        return await db.scalar(
+            select(func.count()).select_from(Order).where(
+                Order.assigned_driver_id == driver_id,
+                Order.order_date == today,
+                Order.status.in_(statuses),
+            )
         )
 
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    cursor = database.db.users.find({"role": UserRole.DRIVER, "is_active": True})
-    
-    drivers = []
-    async for doc in cursor:
-        driver_id = str(doc["_id"])
-        
-        # Count active deliveries today for this driver
-        assigned_count = await database.db.orders.count_documents({
-            "assigned_driver_id": driver_id,
-            "order_date": today_str,
-            "status": {"$in": ["ASSIGNED", "OUT_FOR_DELIVERY"]}
-        })
-        
-        completed_count = await database.db.orders.count_documents({
-            "assigned_driver_id": driver_id,
-            "order_date": today_str,
-            "status": "DELIVERED"
-        })
-
-        drivers.append(DriverDetailResponse(
-            id=driver_id,
-            username=doc.get("username", ""),
-            full_name=doc.get("full_name", "Driver"),
-            phone=doc.get("phone"),
-            email=doc.get("email"),
-            role=doc.get("role", "DRIVER"),
-            is_active=doc.get("is_active", True),
-            driving_status=doc.get("driving_status", "AVAILABLE"),
-            vehicle_type=doc.get("vehicle_type", "Motorcycle"),
-            vehicle_number=doc.get("vehicle_number", "TN-01-AB-1234"),
-            assigned_deliveries_count=assigned_count,
-            completed_today_count=completed_count,
-            last_latitude=doc.get("last_latitude", 13.0850),
-            last_longitude=doc.get("last_longitude", 80.2150),
-            last_location_time=doc.get("last_location_time")
+    results = []
+    for doc in drivers:
+        results.append(DriverDetailResponse(
+            id=str(doc.id),
+            username=doc.username,
+            full_name=doc.full_name,
+            phone=doc.phone,
+            email=doc.email,
+            role=doc.role.value,
+            is_active=doc.is_active,
+            driving_status=doc.driving_status,
+            vehicle_type=doc.vehicle_type,
+            vehicle_number=doc.vehicle_number,
+            assigned_deliveries_count=await count_today(doc.id, [OrderStatus.ASSIGNED, OrderStatus.OUT_FOR_DELIVERY]),
+            completed_today_count=await count_today(doc.id, [OrderStatus.DELIVERED]),
+            last_latitude=doc.last_latitude,
+            last_longitude=doc.last_longitude,
+            last_location_time=doc.last_location_time
         ))
-
-    return drivers
+    return results
 
 
 @router.get("/me/today-deliveries", response_model=DriverTodayDeliveriesResponse)
 async def get_my_today_deliveries(
-    current_user: dict = Depends(get_current_active_user)
+    current_user: dict = Depends(driver_access),
+    db: AsyncSession = Depends(get_db),
 ):
     """
-    Returns today's assigned deliveries ordered by sequence_number for the logged-in driver.
+    Returns today's (Asia/Kolkata) assigned deliveries ordered by sequence_number for the logged-in driver.
     """
-    if database.db is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection unavailable"
-        )
+    driver_id = current_user["id"]
+    driver_name = current_user.get("full_name") or current_user.get("username", "Driver")
+    today = business_today()
 
-    driver_id = str(current_user["id"])
-    driver_name = current_user.get("full_name", current_user.get("username", "Driver"))
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    cursor = database.db.orders.find({
-        "assigned_driver_id": driver_id,
-        "order_date": today_str
-    }).sort([("sequence_number", 1), ("created_at", 1)])
+    rows = (await db.execute(
+        select(Order).where(
+            Order.assigned_driver_id == uuid.UUID(driver_id),
+            Order.order_date == today,
+        ).order_by(Order.sequence_number.asc().nulls_last(), Order.created_at)
+    )).scalars().all()
 
     orders = []
     pending_count = 0
@@ -138,8 +131,8 @@ async def get_my_today_deliveries(
     completed_count = 0
     failed_count = 0
 
-    async for doc in cursor:
-        order = order_helper(doc)
+    for row in rows:
+        order = order_helper(row)
         orders.append(order)
         st = order.get("status")
         if st in ["ASSIGNED", "READY", "PREPARING", "CONFIRMED", "PLANNED"]:
@@ -155,7 +148,7 @@ async def get_my_today_deliveries(
         driver_id=driver_id,
         driver_name=driver_name,
         driving_status=current_user.get("driving_status", "AVAILABLE"),
-        date=today_str,
+        date=today.isoformat(),
         total_assigned=len(orders),
         pending_count=pending_count,
         out_for_delivery_count=out_for_delivery_count,
@@ -168,32 +161,16 @@ async def get_my_today_deliveries(
 @router.patch("/me/status", response_model=dict)
 async def update_my_status(
     status_in: DriverStatusUpdate,
-    current_user: dict = Depends(get_current_active_user)
+    current_user: dict = Depends(driver_access),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Allows authenticated driver to change their shift status (AVAILABLE, ON_DELIVERY, PAUSED, OFFLINE).
     """
-    if database.db is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection unavailable"
-        )
-
-    driver_id = str(current_user["id"])
-    try:
-        query = {"_id": ObjectId(driver_id)}
-    except Exception:
-        query = {"id": driver_id}
-
-    await database.db.users.update_one(
-        query,
-        {
-            "$set": {
-                "driving_status": status_in.driving_status,
-                "updated_at": datetime.now(timezone.utc)
-            }
-        }
-    )
+    driver_id = current_user["id"]
+    driver = await db.get(User, uuid.UUID(driver_id))
+    driver.driving_status = status_in.driving_status
+    await db.commit()
 
     # Broadcast to admin live fleet stream
     await tracking_manager.broadcast_to_admins({
@@ -202,7 +179,7 @@ async def update_my_status(
             "driver_id": driver_id,
             "driver_name": current_user.get("full_name", current_user.get("username")),
             "driving_status": status_in.driving_status,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": utcnow().isoformat()
         }
     })
 
@@ -212,36 +189,32 @@ async def update_my_status(
     }
 
 
+async def _get_driver_or_404(db: AsyncSession, driver_id: str) -> User:
+    driver = await db.get(User, parse_uuid(driver_id, "Driver not found"))
+    # This endpoint group must never edit admin accounts
+    if not driver or driver.role != UserRole.DRIVER:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
+    return driver
+
+
 @router.patch("/{driver_id}", response_model=dict)
 async def update_driver_profile(
     driver_id: str,
     update_in: DriverProfileUpdate,
-    _: dict = Depends(admin_access)
+    _: dict = Depends(admin_access),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Admin endpoint to update driver vehicle info, contact, and active state.
     """
-    if database.db is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection unavailable"
-        )
-
-    try:
-        query = {"_id": ObjectId(driver_id)}
-    except Exception:
-        query = {"id": driver_id}
-
+    driver = await _get_driver_or_404(db, driver_id)
     update_fields = {k: v for k, v in update_in.model_dump(exclude_unset=True).items() if v is not None}
     if not update_fields:
         return {"message": "No changes provided"}
 
-    update_fields["updated_at"] = datetime.now(timezone.utc)
-
-    res = await database.db.users.update_one(query, {"$set": update_fields})
-    if res.matched_count == 0:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Driver not found")
-
+    for field, value in update_fields.items():
+        setattr(driver, field, value)
+    await db.commit()
     return {"message": "Driver profile updated successfully"}
 
 
@@ -249,33 +222,10 @@ async def update_driver_profile(
 async def update_driver_status_admin(
     driver_id: str,
     status_in: DriverStatusUpdate,
-    _: dict = Depends(admin_access)
+    _: dict = Depends(admin_access),
+    db: AsyncSession = Depends(get_db),
 ):
-    if database.db is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database connection unavailable"
-        )
-
-    try:
-        query = {"_id": ObjectId(driver_id)}
-    except Exception:
-        query = {"id": driver_id}
-
-    res = await database.db.users.update_one(
-        query,
-        {
-            "$set": {
-                "driving_status": status_in.driving_status,
-                "updated_at": datetime.now(timezone.utc)
-            }
-        }
-    )
-
-    if res.matched_count == 0:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Driver not found"
-        )
-
+    driver = await _get_driver_or_404(db, driver_id)
+    driver.driving_status = status_in.driving_status
+    await db.commit()
     return {"message": "Driver status updated", "driving_status": status_in.driving_status}

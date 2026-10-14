@@ -1,0 +1,24 @@
+# Local PostgreSQL for development and tests.
+#   docker compose up -d db
+# Creates kavis_kitchen (app) and kavis_kitchen_test (pytest) owned by user kavis/kavis.
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kavis
+      POSTGRES_PASSWORD: kavis
+      POSTGRES_DB: kavis_kitchen
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/scripts/create-test-db.sql:/docker-entrypoint-initdb.d/create-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kavis -d kavis_kitchen"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
