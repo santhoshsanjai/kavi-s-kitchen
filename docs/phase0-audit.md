@@ -255,3 +255,7 @@ The owner approved the recommendations (PostgreSQL, Expo for mobile, keep live t
 | S8 login rate limiting | Still missing | planned with OTP work |
 
 API URLs and JSON shapes are unchanged, except IDs are now UUID strings and driver-only order actions return 404/409 where they used to succeed for the wrong user or state. Backend tests: 10 passed against PostgreSQL.
+
+## 10. Phase 1
+
+Done: domain model, calculations and services with 43 passing tests. See `docs/phase1-report.md`.

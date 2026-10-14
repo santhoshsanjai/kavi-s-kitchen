@@ -19,7 +19,8 @@ class User(UUIDPrimaryKey, Timestamps, Base):
     role: Mapped[UserRole] = mapped_column(str_enum(UserRole, "user_role"), nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    # Driver profile fields (move to a Driver table with driver codes in Phase 1)
+    # Driver profile fields
+    driver_code: Mapped[Optional[str]] = mapped_column(String(10), unique=True)  # e.g. D001
     driving_status: Mapped[str] = mapped_column(String(20), nullable=False, default="AVAILABLE")
     vehicle_type: Mapped[Optional[str]] = mapped_column(String(50))
     vehicle_number: Mapped[Optional[str]] = mapped_column(String(30))
@@ -41,6 +42,7 @@ def user_helper(user: Optional[User]) -> Dict[str, Any]:
         "role": ev(user.role),
         "is_active": user.is_active,
         "driving_status": user.driving_status,
+        "driver_code": user.driver_code,
         "created_at": user.created_at,
         "updated_at": user.updated_at,
     }

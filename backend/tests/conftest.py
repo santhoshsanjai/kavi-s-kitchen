@@ -36,7 +36,11 @@ def migrated_database():
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def clean_database(migrated_database):
+async def clean_database(request):
+    # Pure unit tests (tests/unit) need no database
+    if "unit" in request.node.path.parts:
+        yield
+        return
     tables = ", ".join(t.name for t in Base.metadata.sorted_tables)
     async with SessionLocal() as db:
         await db.execute(text(f"TRUNCATE {tables} CASCADE"))
