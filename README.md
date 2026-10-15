@@ -16,10 +16,10 @@ A production-ready meal delivery management and kitchen operations web applicati
   - Responsive layouts using Tailwind CSS and `shadcn/ui` components.
   - Configurable brand tokens (Golden Mustard `#E5A93C`, Deep Green `#1B4D3E`, Warm Cream background).
 - **Backend Architecture**:
-  - Python FastAPI with async `motor` driver for MongoDB.
+  - Python FastAPI with SQLAlchemy 2 (async, `asyncpg`) on PostgreSQL 16.
+  - Alembic migrations (`backend/alembic/`); money stored as `NUMERIC`.
   - Direct bcrypt hashing & JWT token security (Access & Refresh tokens).
-  - Resilient database connection with Atlas connectivity and in-memory mock fallback for offline development.
-  - Auto-seeding of default initial accounts.
+  - Demo accounts and data seeded on startup in `ENVIRONMENT=development` only.
 
 ---
 
@@ -50,18 +50,45 @@ kavis-kitchen/
 
 ## 🛠️ Quick Start
 
-### 1. Backend Setup
+### 1. Database (PostgreSQL)
+
+Start a local PostgreSQL 16 with Docker:
+
+```bash
+docker compose up -d db
+```
+
+This creates the `kavis_kitchen` database and the `kavis_kitchen_test` database used by the tests (user `kavis`, password `kavis`, port 5432).
+
+Without Docker, install PostgreSQL 16 and run:
+
+```bash
+psql -U postgres -c "CREATE USER kavis WITH PASSWORD 'kavis' CREATEDB;"
+psql -U postgres -c "CREATE DATABASE kavis_kitchen OWNER kavis;"
+psql -U postgres -c "CREATE DATABASE kavis_kitchen_test OWNER kavis;"
+```
+
+### 2. Backend Setup
 
 ```bash
 cd backend
 python -m venv venv
 .\venv\Scripts\activate   # On Windows (or source venv/bin/activate on Linux/Mac)
 pip install -r requirements.txt
-cp .env.example .env     # Configure MongoDB and secret keys
+cp .env.example .env     # DATABASE_URL already points at the local database
+alembic upgrade head     # create/upgrade the schema
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 2. Frontend Setup
+Run the tests (they rebuild the schema in `kavis_kitchen_test`; override with `TEST_DATABASE_URL`):
+
+```bash
+pytest -q
+```
+
+After changing models, create a migration with `alembic revision --autogenerate -m "describe change"` and review it before committing.
+
+### 3. Frontend Setup
 
 ```bash
 cd frontend

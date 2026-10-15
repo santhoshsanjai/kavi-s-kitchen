@@ -1,20 +1,48 @@
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any
-from bson import ObjectId
+from datetime import datetime
+from typing import Any, Dict, Optional
+from sqlalchemy import Boolean, DateTime, Float, String
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base, Timestamps, UUIDPrimaryKey
+from app.models._types import ev, str_enum
+from app.schemas.user import UserRole
 
 
-def user_helper(user: Dict[str, Any]) -> Dict[str, Any]:
-    """Helper to convert MongoDB user document into a standardized dictionary."""
+class User(UUIDPrimaryKey, Timestamps, Base):
+    __tablename__ = "users"
+
+    username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    email: Mapped[Optional[str]] = mapped_column(String(255), unique=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(20), unique=True)
+    full_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[UserRole] = mapped_column(str_enum(UserRole, "user_role"), nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # Driver profile fields
+    driver_code: Mapped[Optional[str]] = mapped_column(String(10), unique=True)  # e.g. D001
+    driving_status: Mapped[str] = mapped_column(String(20), nullable=False, default="AVAILABLE")
+    vehicle_type: Mapped[Optional[str]] = mapped_column(String(50))
+    vehicle_number: Mapped[Optional[str]] = mapped_column(String(30))
+    last_latitude: Mapped[Optional[float]] = mapped_column(Float)
+    last_longitude: Mapped[Optional[float]] = mapped_column(Float)
+    last_location_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+def user_helper(user: Optional[User]) -> Dict[str, Any]:
+    """Serializes a User row into the API's user dictionary."""
     if not user:
         return {}
     return {
-        "id": str(user["_id"]) if "_id" in user else str(user.get("id", "")),
-        "username": user.get("username", ""),
-        "email": user.get("email"),
-        "phone": user.get("phone"),
-        "full_name": user.get("full_name", ""),
-        "role": user.get("role", "ADMIN"),
-        "is_active": user.get("is_active", True),
-        "created_at": user.get("created_at", datetime.now(timezone.utc)),
-        "updated_at": user.get("updated_at")
+        "id": str(user.id),
+        "username": user.username,
+        "email": user.email,
+        "phone": user.phone,
+        "full_name": user.full_name,
+        "role": ev(user.role),
+        "is_active": user.is_active,
+        "driving_status": user.driving_status,
+        "driver_code": user.driver_code,
+        "created_at": user.created_at,
+        "updated_at": user.updated_at,
     }
