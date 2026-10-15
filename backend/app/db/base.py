@@ -6,7 +6,9 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
-    pass
+    # Fetch server-generated values (timestamps) with RETURNING on insert/update, so rows can be
+    # serialized after a flush or commit without a lazy load.
+    __mapper_args__ = {"eager_defaults": True}
 
 
 class UUIDPrimaryKey:

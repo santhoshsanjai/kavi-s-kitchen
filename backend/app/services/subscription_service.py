@@ -222,3 +222,65 @@ async def restore_meals(db: AsyncSession, *, subscription_id: uuid.UUID,
           {"slots": [f"{s.service_date.isoformat()}:{s.meal_window.value}" for s in slots],
            "credit_posted": str(delta)})
     return SkipResult(len(slots), 0, 0, delta)
+
+
+async def add_rate_version(db: AsyncSession, *, plan_id: uuid.UUID, effective_from: date, monthly_amount: Decimal,
+                           included_meals: List[MealWindow], reason: str, actor_id: uuid.UUID) -> PlanRateVersion:
+    """New plan price from a future month. Existing subscriptions keep the rate they were activated with."""
+    from app.core.time import business_today
+    reason = require_reason(reason, "Changing a plan rate")
+    plan = await db.get(MealPlan, plan_id)
+    if plan is None:
+        raise NotFound("Plan not found")
+    if effective_from < business_today():
+        raise ValidationFailed("A rate change cannot take effect in the past")
+    amount = to_decimal(monthly_amount)
+    if amount < 0:
+        raise ValidationFailed("Plan amount cannot be negative")
+    if not included_meals:
+        raise ValidationFailed("A plan must include at least one meal")
+    exists = await db.scalar(select(func.count()).select_from(PlanRateVersion).where(
+        PlanRateVersion.plan_id == plan_id, PlanRateVersion.effective_from == effective_from))
+    if exists:
+        raise Conflict("A rate already starts on that date for this plan")
+    rate = PlanRateVersion(plan_id=plan_id, effective_from=effective_from, monthly_amount=round_money(amount),
+                           included_meals=[m.value for m in MEAL_WINDOW_ORDER if m in set(included_meals)])
+    db.add(rate)
+    await db.flush()
+    audit(db, actor_id, "plan.rate_version_created", "meal_plan", plan_id, reason,
+          {"effective_from": effective_from.isoformat(), "monthly_amount": str(rate.monthly_amount),
+           "included_meals": rate.included_meals})
+    return rate
+
+
+@dataclass
+class SkipPreviewLine:
+    service_date: date
+    meal_window: MealWindow
+    on_time: bool
+    blocked: bool  # a driver already accepted, started or completed it
+
+
+async def preview_skip(db: AsyncSession, *, subscription_id: uuid.UUID,
+                       targets: Iterable[Tuple[date, Optional[MealWindow]]], now: datetime
+                       ) -> Tuple[List[SkipPreviewLine], Decimal]:
+    """What a skip would do, without changing anything: per meal on-time status and the credit it would post."""
+    sub = await db.get(Subscription, subscription_id)
+    if sub is None:
+        raise NotFound("Subscription not found")
+    _, settings = await get_settings(db, sub.service_month)
+    slots = [s for s in await _resolve_slots(db, sub, targets) if s.status == SlotStatus.SCHEDULED]
+    lines = []
+    for slot in sorted(slots, key=lambda s: (s.service_date, MEAL_WINDOW_ORDER.index(s.meal_window))):
+        window = settings.meal_windows[slot.meal_window]
+        task = await _live_task(db, slot.id)
+        lines.append(SkipPreviewLine(
+            slot.service_date, slot.meal_window,
+            is_skip_on_time(now, slot.service_date, window.start, window.skip_cutoff_minutes, BUSINESS_TZ),
+            task is not None and task.status not in UNSTARTED))
+    eligible_now = await db.scalar(select(func.count()).select_from(SubscriptionMealSlot).where(
+        SubscriptionMealSlot.subscription_id == sub.id, SubscriptionMealSlot.status == SlotStatus.SKIPPED,
+        SubscriptionMealSlot.skip_credit_eligible.is_(True)))
+    target = cumulative_skip_credit(sub.plan_amount, sub.total_slots, eligible_now + sum(l.on_time for l in lines),
+                                    settings.billing.rounding_policy)
+    return lines, target - sub.credited_skip_total

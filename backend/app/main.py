@@ -1,9 +1,11 @@
-from fastapi import FastAPI, Response, status
+from fastapi import FastAPI, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import check_database, engine
 from app.api.v1.api import api_router
 from app.db.init_db import init_db
+from app.services.errors import DomainError
 from app.services.jobs import assignment_expiry_loop
 from contextlib import asynccontextmanager, suppress
 import asyncio
@@ -27,6 +29,11 @@ app = FastAPI(
     title=settings.app_name,
     lifespan=lifespan
 )
+
+@app.exception_handler(DomainError)
+async def domain_error_handler(request: Request, exc: DomainError):
+    # Business rule violations from services carry their own HTTP status (404/409/422...)
+    return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
 
 # Configure CORS
 origins = [origin.strip() for origin in settings.cors_origins.split(",")]

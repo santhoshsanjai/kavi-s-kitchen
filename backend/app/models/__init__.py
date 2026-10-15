@@ -10,6 +10,7 @@ from app.models.delivery import DeliveryEvent, DeliveryTask, DeliveryTrip, Drive
 from app.models.payout import DriverDaySummary, DriverEarningLine
 from app.models.ledger import CustomerLedgerEntry, Payment, PaymentAllocation
 from app.models.audit import AdminAlert, AuditLog
+from app.models.menu import FoodItem, InboxItem, MenuEntry, WeeklyMenu
 
 __all__ = [
     "User", "Customer", "Enquiry", "MealPlan", "Order",
@@ -20,4 +21,5 @@ __all__ = [
     "DriverDaySummary", "DriverEarningLine",
     "CustomerLedgerEntry", "Payment", "PaymentAllocation",
     "AdminAlert", "AuditLog",
+    "FoodItem", "WeeklyMenu", "MenuEntry", "InboxItem",
 ]
